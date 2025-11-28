@@ -1,0 +1,203 @@
+Below is a deep and complete, step-by-step explanation of both methods for using internet with a Quectel EC200 module on a Yocto Sato image.
+This guide explains HOW and WHY each step works so you understand the full system.
+
+📘 METHOD 1 — Using ModemManager (Recommended, Modern, Stable)
+
+ModemManager is a framework that auto-detects cellular modems, configures APNs, creates data connections, and exposes everything through the mmcli command and D-Bus.
+This method requires almost NO manual AT commands.
+
+✔️ 1. Install ModemManager in Yocto
+
+Add this to your image recipe (e.g., core-image-sato.bbappend):
+
+IMAGE_INSTALL:append = " modemmanager modemmanager-data mmcli"
+
+
+Rebuild image → flash → boot.
+
+Why?
+
+modemmanager = daemon that manages 4G/3G/LTE modems
+
+mmcli = CLI tool to control ModemManager
+
+modemmanager-data = udev rules for detecting Quectel modem
+
+✔️ 2. Connect the EC200 to your board
+
+Most EC200 modules enumerate as USB composite devices:
+
+/dev/ttyUSB0 → AT command port
+
+/dev/ttyUSB1 → modem port
+
+/dev/ttyUSB2 → data port
+
+Verify with:
+
+dmesg | grep ttyUSB
+ls -l /dev/ttyUSB*
+
+
+Why?
+The kernel "option" driver binds these ports to user-space applications like ModemManager.
+
+✔️ 3. Start ModemManager
+systemctl enable ModemManager
+systemctl start ModemManager
+
+
+Check detection:
+
+mmcli -L
+
+
+Output example:
+
+Found 1 modem:
+  /org/freedesktop/ModemManager1/Modem/0 [Quectel] EC200U
+
+
+Why?
+This means ModemManager has recognized the EC200 modem and is managing it over its AT interfaces.
+
+✔️ 4. Check modem status
+mmcli -m 0
+
+
+You'll see SIM status, signal strength, and capabilities.
+
+✔️ 5. Unlock SIM (if needed)
+mmcli -m 0 --pin=1234
+
+✔️ 6. Connect to Internet (1 command)
+mmcli -m 0 --simple-connect="apn=YOUR_APN"
+
+
+Example:
+
+mmcli -m 0 --simple-connect="apn=internet"
+
+
+What ModemManager automatically does:
+✔ Sends AT+CFUN=1
+✔ Sets APN using AT+CGDCONT
+✔ Dials *99# internally
+✔ Creates a network interface (e.g., wwan0)
+✔ Adds routes and DNS
+
+Check:
+
+mmcli -m 0
+ip addr
+ping -c 4 8.8.8.8
+
+✔️ 7. Why use ModemManager?
+Feature	ModemManager
+Auto-detection	✔
+Handles APN automatically	✔
+Multiple carriers	✔
+Reconnect on failure	✔
+No manual scripts needed	✔
+D-Bus accessible	✔
+
+This is the cleanest, most robust method for Yocto and embedded Linux.
+
+📘 METHOD 2 — Using PPP (Manual, Low Level, Full AT Control)
+
+This method uses the Linux pppd daemon and a chat script to dial the modem manually using AT commands.
+
+PPP is simple but old; still widely used for embedded systems.
+
+✔️ 1. Install PPP in Yocto
+
+In your .bbappend:
+
+IMAGE_INSTALL:append = " ppp"
+
+
+Rebuild → boot.
+
+✔️ 2. Verify modem ports
+ls /dev/ttyUSB*
+
+
+For PPP, pick the "data" port, usually /dev/ttyUSB2.
+
+✔️ 3. Create chat script (AT command script)
+
+Chat scripts send a sequence of AT commands.
+
+Create file:
+
+/etc/chatscripts/quectel-chat-connect
+
+
+Contents:
+
+ABORT "BUSY"
+ABORT "NO CARRIER"
+ABORT "NO DIALTONE"
+ABORT "ERROR"
+ABORT "NO ANSWER"
+
+TIMEOUT 30
+
+"" AT
+OK AT+CPIN?
+OK AT+CGDCONT=1,"IP","YOUR_APN" 
+OK ATD*99#
+CONNECT
+
+
+Why?
+
+AT+CGDCONT=1,"IP",APN → configures PDP context
+
+ATD*99# → standard 3G/4G dial command to bring up data session
+
+"CONNECT" indicates PPP can start negotiation.
+
+✔️ 4. Create PPP peers configuration
+
+Create file:
+
+/etc/ppp/peers/quectel
+
+
+Contents:
+
+/dev/ttyUSB2 115200
+connect "/usr/sbin/chat -v -f /etc/chatscripts/quectel-chat-connect"
+noauth
+defaultroute
+usepeerdns
+lock
+persist
+
+
+What these mean:
+
+connect → runs the chat script above
+
+defaultroute → sets ppp0 as default Internet route
+
+usepeerdns → uses DNS received from carrier
+
+✔️ 5. Start the connection
+pppd call quectel
+
+
+If successful:
+
+ifconfig ppp0
+
+
+You should have an IP like:
+
+inet 10.x.x.x
+
+
+Check internet:
+
+ping -I ppp0 8.8.8.8
