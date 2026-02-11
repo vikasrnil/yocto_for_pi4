@@ -11,23 +11,27 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 inherit packagegroup features_check
 REQUIRED_DISTRO_FEATURES = "x11"
 
-PACKAGES = "${PN} ${PN}-base"
+PACKAGES = "${PN} ${PN}-base ${PN}-apps ${PN}-games"
 
 RDEPENDS:${PN} = "\
     ${PN}-base \
+    ${PN}-apps \
+    ${PN}-games \
     "
 
 SUMMARY:${PN}-base = "Sato desktop - base packages"
 RDEPENDS:${PN}-base = "\
-    version1 \
+    matchbox-desktop \
     matchbox-session-sato \
     matchbox-keyboard \
     matchbox-keyboard-applet \
     matchbox-keyboard-im \
     matchbox-config-gtk \
     xcursor-transparent-theme \
+    sato-icon-theme \
     settings-daemon \
     shutdown-desktop \
+    ${NETWORK_MANAGER} \
     ${@bb.utils.contains('DISTRO_FEATURES', 'systemd', '', 'udev-extraconf', d)} \
     ${@bb.utils.contains('DISTRO_FEATURES', 'pulseaudio', 'pulseaudio-server pulseaudio-client-conf-sato pulseaudio-misc', '', d)} \
     "
@@ -40,3 +44,17 @@ WEB ?= ""
 GSTEXAMPLES ?= "gst-examples"
 GSTEXAMPLES:riscv64 = ""
 
+SUMMARY:${PN}-apps = "Sato desktop - applications"
+RDEPENDS:${PN}-apps = "\
+    l3afpad \
+    matchbox-terminal \
+    sato-screenshot \
+    ${FILEMANAGER} \
+    ${GSTEXAMPLES} \
+    ${WEB} \
+    "
+
+SUMMARY:${PN}-games = "Sato desktop - games"
+RDEPENDS:${PN}-games = "\
+    puzzles \
+    "
